@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Highly Available VPC with ALB, Security Groups, and NAT Gateway"
+
+Resources:
+  # VPC
+  JuliusPhotoAlbumVPC3:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: JuliusPhotoAlbumVPC3
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: JuliusInternetGateway1
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref JuliusPhotoAlbumVPC3
+      InternetGatewayId: !Ref InternetGateway
+
+  # Elastic IP for NAT Gateway
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  # NAT Gateway
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+      - Key: Name
+        Value: JuliusNATGateway2
+
+  # Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref JuliusPhotoAlbumVPC3
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: PublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref JuliusPhotoAlbumVPC3
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs "" ]
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: PublicSubnet2
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref JuliusPhotoAlbumVPC3
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      MapPublicIpOnLaunch: false
+      Tags:
+      - Key: Name
+        Value: PrivateSubnet1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref JuliusPhotoAlbumVPC3
+      CidrBlock: 10.0.5.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs "" ]
+      MapPublicIpOnLaunch: false
+      Tags:
+      - Key: Name
+        Value: PrivateSubnet2
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref JuliusPhotoAlbumVPC3
+      Tags:
+      - Key: Name
+        Value: PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Private Route Table (Using NAT Gateway)
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref JuliusPhotoAlbumVPC3
+      Tags:
+      - Key: Name
+        Value: PrivateRouteTable
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # Security Groups
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "ECSSecurityGroup2"
+      GroupDescription: "Security group for ECS services"
+      VpcId: !Ref JuliusPhotoAlbumVPC3
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: "3000"
+        ToPort: "3000"
+        SourceSecurityGroupId: !Ref ALBSecurityGroup
+      Tags:
+      - Key: Name
+        Value: ECS-SecurityGroup
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "ALBSecurityGroup2"
+      GroupDescription: "Security group for the load balancer"
+      VpcId: !Ref JuliusPhotoAlbumVPC3
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: "80"
+        ToPort: "80"
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: ALB-SecurityGroup
+
+Outputs:
+  LogicalResourceId:
+    Description: "Resources created in this template with their logical IDs"
+    Value:
+      Fn::Join:
+      - ", "
+      - - !Sub "PublicSubnet1: ${PublicSubnet1}"
+        - !Sub "PublicSubnet2: ${PublicSubnet2}"
+        - !Sub "PrivateSubnet1: ${PrivateSubnet1}"
+        - !Sub "PrivateSubnet2: ${PrivateSubnet2}"
+        - !Sub "PublicRouteTable: ${PublicRouteTable}"
+        - !Sub "PrivateRouteTable: ${PrivateRouteTable}"
+        - !Sub "InternetGateway: ${InternetGateway}"
+        - !Sub "NatGateway: ${NatGateway}"
+        - !Sub "JuliusPhotoAlbumVPC3: ${JuliusPhotoAlbumVPC3}"
